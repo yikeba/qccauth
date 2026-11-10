@@ -1,0 +1,58 @@
+plugins {
+    id 'java'
+}
+
+group = 'qcc.auth'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 可选：JDK 23 没有原生 ML-DSA，由 bcprov 提供（与 QCC 同版本）。JDK 24+ 可删掉这一行，自动走 JDK 原生。
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.81'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(23)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+def runTask(String name, String main, String grp = 'qccauth') {
+    tasks.register(name, JavaExec) {
+        group = grp
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = main
+        workingDir = projectDir
+        jvmArgs '-Dstdout.encoding=UTF-8'
+        standardInput = System.in
+    }
+}
+
+runTask('selfTest', 'qcc.auth.AuthSelfTest', 'verification')     // 自测：模拟 namespace / 链节点
+runTask('demo', 'qcc.auth.demo.AuthDemoServer')                  // 演示应用 :9280，读 ./qccauth.json
+
+// === Fat Jar：./gradlew jar → build/libs/qccauth.jar ===
+//   作为库：应用 implementation files('libs/qccauth.jar')，或直接拷 src/main/java/qcc/auth 源码
+//   作为演示：java -jar qccauth.jar [config=qccauth.json]
+jar {
+    archiveFileName = 'qccauth.jar'
+    manifest {
+        attributes(
+                'Main-Class': 'qcc.auth.demo.AuthDemoServer',
+                'Implementation-Title': 'QCC-Auth',
+                'Implementation-Version': project.version
+        )
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'META-INF/*.EC', 'module-info.class', 'META-INF/versions/*/module-info.class'
+}
